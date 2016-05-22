@@ -134,6 +134,7 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     Transforms an array of CO2 emissions into radiative forcing, CRF, or temperature
     with user defined time-step.
     
+    Parameters:
     emission: an array of emissions, should be same size as years
     years: an array of years at which the emissions take place
     tstep: time step to be used in the calculations
@@ -150,6 +151,12 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     Keyword arguments are used to pass random IRF parameter values for a single run as
     part of a larger monte carlo calculation (currently limited to CH4 decomposing to
     CO2 in the *CH4* function).
+    
+    Returns:
+    output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and full_output is
+            False, returns a dataframe with 'mean', '+sigma', and '-sigma' columns.
+    output, full_output: Only returned when full_output=True. Both the dataframe with
+            'mean', '+sigma', and '-sigma' columns, and results from all MC runs.
     """
     if min(years) > 0:
         years = years - min(years)
@@ -331,6 +338,12 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     RS: Random state initiator for continuity between calls
     full_output: When True, outputs the results from all runs as an array in addition to
     the mean and +/- sigma as a DataFrame
+    
+    Returns:
+    output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and full_output is
+            False, returns a dataframe with 'mean', '+sigma', and '-sigma' columns.
+    output, full_output: Only returned when full_output=True. Both the dataframe with
+            'mean', '+sigma', and '-sigma' columns, and results from all MC runs.
     """
     
 	# Gamma is the carbon released per K temperature increase - Collins et al (2013)
