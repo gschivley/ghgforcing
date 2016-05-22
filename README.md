@@ -1,4 +1,6 @@
 # ghgforcing
+**Note: I'll be putting up a notebook in a few days with examples of how to use the functions in ghgforcing**
+
 Python package to calculating forcing from continuous GHG emissions. All calculations are
 based on equations and parameters in the 2013 IPCC AR5 report. As such, the model does not
 account for changing background concentrations. But all results are consistant with the 
