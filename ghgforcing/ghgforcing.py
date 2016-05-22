@@ -466,7 +466,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 # Additional forcing from cc-fb
                 if cc_fb == True: #I need to set up cc_fb for MC still
 				    #Accounting for uncertainty through normal distribution
-                    cc_co2 = CH4_cc_tempforrf(emiss, time) * gamma * ccfb_dist[count]
+                    cc_co2 = CH4_cc_tempforrf(emiss, years) * gamma * ccfb_dist[count]
                     cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
                                       time.size) * tstep
                     rf += cc_co2_atmos * co2_re
@@ -549,7 +549,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             rf = ch4_atmos * ch4_re + co2_atmos * co2_re
             
             if cc_fb == True: #I need to set up cc_fb for MC still
-                cc_co2 = CH4_cc_tempforrf(emission, time) * gamma
+                cc_co2 = CH4_cc_tempforrf(emission, years) * gamma
                 cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
                                   time.size) * tstep
                 rf += cc_co2_atmos * co2_re
