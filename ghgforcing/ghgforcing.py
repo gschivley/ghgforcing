@@ -352,8 +352,15 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
 	# This is a holdover from some models with emissions in non-consecutive years
     if min(years) > 0:
         years = years - min(years)
+    
     end = max(years) 
-    time = np.linspace(years[0], end, end/tstep + 1)
+    f = interp1d(years, emission, kind=interpolation)
+    time = np.linspace(years[0], end, end/tstep + 1)    
+    inter_emissions = f(time)
+    results = np.zeros((len(time), runs))
+    count = 0
+    slice_step = int(1/tstep)
+
     
     #if not isinstance(emission, pd.DataFrame):
     #    emission = pd.DataFrame(emission)
@@ -449,9 +456,9 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 alpha = alpha_dist[count]
                 
 				# Calculation of CH4 and CO2 in atmosphere over time.
-                ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), emiss),
+                ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), inter_emissions),
                                   time.size) * tstep
-                co2 = np.resize(fftconvolve(ch42co2(time, ch4_tau, alpha), emiss),
+                co2 = np.resize(fftconvolve(ch42co2(time, ch4_tau, alpha), inter_emissions),
                             time.size) * tstep
                 
                 #I've now included uncertainty here, but the code is pretty sloppy. Need
@@ -539,9 +546,9 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
         else:
             ch4_re = RE
             
-            ch4_atmos = np.resize(fftconvolve(CH4_AR5(time), emission),
+            ch4_atmos = np.resize(fftconvolve(CH4_AR5(time), inter_emissions),
                                   time.size) * tstep
-            co2 = np.resize(fftconvolve(ch42co2(time, CH4tau), emission),
+            co2 = np.resize(fftconvolve(ch42co2(time, CH4tau), inter_emissions),
                             time.size) * tstep
             co2_atmos = np.resize(fftconvolve(CO2_AR5(time), co2),
                                   time.size) * tstep
@@ -599,7 +606,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 co2_re = CO2RE[count]
 				
 				# CH4 in atmosphere, and calculation of forcing
-                ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), emiss),
+                ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), inter_emissions),
                                   time.size) * tstep
             
                 rf = ch4_atmos * ch4_re
@@ -607,7 +614,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 # Additional CO2 emissions from cc-fb
                 if cc_fb == True: #I need to set up cc_fb for MC still
 				    #Accounting for uncertainty through normal distribution
-                    cc_co2 = CH4_cc_tempforrf(emiss, time) * gamma * ccfb_dist[count]
+                    cc_co2 = CH4_cc_tempforrf(inter_emissions, time) * gamma * ccfb_dist[count]
                     cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
                                       time.size) * tstep
                     rf += cc_co2_atmos * co2_re
@@ -680,13 +687,13 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
         else:
             ch4_re = RE
             
-            ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, CH4tau), emission),
+            ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, CH4tau), inter_emissions),
                                   time.size) * tstep
             
             rf = ch4_atmos * ch4_re
             
             if cc_fb == True: #I need to set up cc_fb for MC still
-                cc_co2 = CH4_cc_tempforrf(emission, time) * gamma
+                cc_co2 = CH4_cc_tempforrf(inter_emissions, time) * gamma
                 cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
                                   time.size) * tstep
                 rf += cc_co2_atmos * co2_re
