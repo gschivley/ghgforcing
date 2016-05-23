@@ -153,7 +153,6 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     inter_emissions = f(time)
     
     results = np.zeros((len(time), runs))
-    count = 0
     slice_step = int(1/tstep)
     
     #Monte Carlo calculations when runs > 1
@@ -219,9 +218,7 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             else:
                 #Store individual run in results matrix
                 results[:,count] = rf
-            
-            #This seems to be unnecessary when doing count in runs
-            #count += 1
+
         
         #Return only the mean & +/- 1 sigma values for each year
         if full_output == False:
@@ -362,7 +359,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     
     
     results = np.zeros((len(time), runs))
-    count = 0
     slice_step = int(1/tstep)
 
             
@@ -378,8 +374,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
         co2_re = 1.756E-15
         ch4_re = 1.277E-13 * 1.65
     
-                
-    count = 0
     if decay == True: # CH4 to CO2 decay
         if runs > 1: # More than one run, so use MC
         
@@ -432,7 +426,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             tau3=df_exp['t3'].values
             
             
-            while count < runs:
+            for count in np.arange(runs):
                 
                 #Random choice of emission scenario where more than one is available
                 emiss = emission#[random.choice(emission.columns)]
@@ -485,8 +479,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 else:
 					results[:,count] = rf
                 
-
-                count += 1
             
             #Calculate output, which is mean and +/- 1 sigma
             if full_output == False:
@@ -504,12 +496,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                     output['+sigma'] = output['mean'] + np.std(results[0::slice_step], 
                                                                 axis=1)
 
-                #elif kind == 'CRF':
-                #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-                #   output['mean'] = np.mean(crf[0::slice_step], axis=1)
-                #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-                #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-                
                 return output
     
             elif full_output == True:
@@ -531,14 +517,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             
                     full_output = results[0::slice_step]
 
-                #elif kind == 'CRF':
-                #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-                #    output['mean'] = np.mean(crf[0::slice_step], axis=1)
-                #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-                #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-            
-                #    full_output = crf[0::slice_step]
-            
                 return output, full_output
         
         # Single run, no MC
@@ -593,7 +571,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                             random_state=RS+4)
             
             
-            while count < runs:
+            for count in np.arange(runs):
             
                 #Random choice of emission scenario where more than one is available
                 emiss = emission#[random.choice(emission.columns)]
@@ -625,9 +603,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                     #continue
                 else:
 					results[:,count] = rf
-                
 
-                count += 1
             
 			#Calculate output, which is mean and +- 1 sigma
             if full_output == False:
@@ -645,12 +621,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                     output['+sigma'] = output['mean'] + np.std(results[0::slice_step], 
                                                                 axis=1)
 
-                #elif kind == 'CRF':
-                #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-                #    output['mean'] = np.mean(crf[0::slice_step], axis=1)
-                #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-                #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-                
                 return output
     
             elif full_output == True:
