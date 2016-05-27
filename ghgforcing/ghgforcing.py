@@ -143,6 +143,9 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 'mean', '+sigma', and '-sigma' columns, and a numpy array with results
                 from all MC runs.
     """
+    emission = emission.astype(float)
+    years = years.astype(float)
+    
     
     #Adjust years so that they start at zero
     if min(years) > 0:
@@ -676,6 +679,9 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 'mean', '+sigma', and '-sigma' columns, and results from all MC runs.
     """
     #This function has pieces that need to be split out to clean up the code.
+    
+    emission = emission.astype(float)
+    years = years.astype(float)
     
     
 	# Gamma is the kg carbon released per K temperature increase - Collins et al (2013)
