@@ -1,3 +1,5 @@
+#Version 0.2.0
+
 import numpy as np
 import scipy as sp
 from scipy.interpolate import interp1d
@@ -295,14 +297,183 @@ def ch42co2(t, CH4tau=12.4, alpha=0.51):
     #ch4tau = 12.4
     return 1/CH4tau * alpha * np.exp(-t/CH4tau)
 
+def CH4_decay(emission, years, tstep = 0.01, runs=1, RS=1, cc_fb=True):
+    """
+    Transforms an array of CH4 emissions into radiative forcing, CRF, or temperature
+    with user defined time-step. Accounts for decay of CH4 to CO2.
+    
+    
+    """
+    #Results array
+    results = np.zeros((len(time), runs))
+    
+    
+    #For Monte Carlo
+    if runs > 1:
+        #Adjusted CH4 lifetime
+        tau = norm.rvs(12.4, 1.4, size=runs, random_state=RS)
+       
+        # 90% CI is +/- 60% of mean. Divide by 1.64 to find sigma
+        f1 = norm.rvs(0.5, 0.5 * 0.6 / 1.64, size=runs, random_state=RS+1) 
+        
+        # 90% CI is +/- 71.43% of mean. Divide by 1.64 to find sigma
+        f2 = norm.rvs(0.15, 0.15 * 0.7143 / 1.64, size=runs, random_state=RS+2) 
+        
+        # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
+        RE = norm.rvs(1.277E-13, 1.277E-13 * 0.1 / 1.64, size=runs, random_state=RS+3)
+        
+        #Total CH4 radiative efficiency
+        CH4RE_total = RE * (1 + f1 + f2)
+        
+        #CO2 radiative efficiency
+        # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
+        CO2RE = norm.rvs(1.756e-15, 1.756e-15 * 0.1 / 1.64, size=runs, 
+                        random_state=RS+4)
+                        
+        #Uncertainty in CH4 decomposition to CO2. Boucher et al (2009) use a lower 
+        #bound of 51% and an upper bound of 100%. GWP calculations in AR5 assume 51% 
+        #(personal communication - find email to cite). Using a uniform distribution 
+        #here for now.
+        alpha_dist = sp.stats.uniform.rvs(loc=0.51, scale=0.49, 
+                                          size=runs, random_state=RS)
+        
+        # sigma and x are from Olivie and Peters (2013) Table 5 (J13 values)
+        # They are the covariance and mean arrays for CO2 IRF uncertainty
+        sigma = np.array([[0.129, -0.058, 0.017, -0.042, -0.004, -0.009],
+                        [-0.058, 0.167,	-0.109,	0.072, -0.015,	0.003],
+                        [0.017,	-0.109,	0.148,	-0.043,	0.013,	-0.013],
+                        [-0.042, 0.072,	-0.043,	0.090,	0.009,	0.006],
+                        [-0.004, -0.015, 0.013,	0.009,	0.082,	0.013],
+                        [-0.009, 0.003,	-0.013,	0.006,	0.013,	0.046]])
+                        
+        x = np.array([5.479, 2.913,	0.496, 0.181, 0.401, -0.472])
+
+        data = multivariate_normal.rvs(x,sigma, runs, random_state=RS)
+        data_df = pd.DataFrame(data, columns=['t1', 't2', 't3', 'b1','b2','b3'])
+        df_exp = np.exp(data_df)
+        
+        a0 = 1 / (1 + df_exp['b1'] + df_exp['b2'] + df_exp['b3'])
+        a1 = df_exp['b1'] / (1 + df_exp['b1'] + df_exp['b2'] + df_exp['b3'])
+        a2 = df_exp['b2'] / (1 + df_exp['b1'] + df_exp['b2'] + df_exp['b3'])
+        a3 = df_exp['b3'] / (1 + df_exp['b1'] + df_exp['b2'] + df_exp['b3'])
+
+        tau1=df_exp['t1'].values
+        tau2=df_exp['t2'].values
+        tau3=df_exp['t3'].values
+        
+        
+        for count in np.arange(runs):
+            
+            #Random choice of emission scenario where more than one is available
+            emiss = emission#[random.choice(emission.columns)]
+        
+            # Use sequential values of tau and RE, so they are the same between runs
+            ch4_tau = tau[count]
+            ch4_re = CH4RE_total[count]
+            co2_re = CO2RE[count]
+            
+            #CO2 IRF parameter values
+            co2_kwargs = {'a0' : a0[count], 
+                          'a1' : a1[count], 
+                          'a2' : a2[count], 
+                          'a3' : a3[count],
+                          'tau1' : tau1[count],
+                          'tau2' : tau2[count],
+                          'tau3' : tau3[count]}
+            
+            #Percent of CH4 that decays to CO2
+            alpha = alpha_dist[count]
+            
+            # Calculation of CH4 and CO2 in atmosphere over time.
+            ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), inter_emissions),
+                              time.size) * tstep
+            co2 = np.resize(fftconvolve(ch42co2(time, ch4_tau, alpha), inter_emissions),
+                        time.size) * tstep
+            
+            #I've now included uncertainty here, but the code is pretty sloppy. Need
+            #to clean it up soon, maybe use the *CO2* function to include uncertainty
+            #rather than copying the multivariate normal stuff in here.                              
+            co2_atmos = np.resize(fftconvolve(CO2_AR5(time, **co2_kwargs), co2),
+                              time.size) * tstep
+        
+            # Forcing from CH4 and CO2
+            rf = ch4_atmos * ch4_re + co2_atmos * co2_re
+            
+
+            
+            results[:,count] = rf
+        
+            
+    elif runs == 1:
+        
+        #Defined radiative efficiencies (per kg) for CH4 and CO2 from AR5
+        ch4_re = 1.277E-13 * 1.65
+        co2_re = 1.756e-15
+        
+        #Amount of CH4 in the atmosphere over time    
+        ch4_atmos = np.resize(fftconvolve(CH4_AR5(time), inter_emissions),
+                              time.size) * tstep
+        
+        #CO2 emissions from CH4 decay
+        co2 = np.resize(fftconvolve(ch42co2(time, CH4tau), inter_emissions),
+                        time.size) * tstep
+        
+        #Amount of CO2 in the atmosphere over time
+        co2_atmos = np.resize(fftconvolve(CO2_AR5(time), co2),
+                              time.size) * tstep
+        
+        #Forcing from CH4 and CO2
+        rf = ch4_atmos * ch4_re + co2_atmos * co2_re
+        
+        results = rf
+        
+    #Having trouble figuring out if I should include cc_fb in this function or in the
+    #CH4 function. Trying it here. The ccfb_dist variable in cc_fb should account for
+    #all uncertainty (CO2 IRF, etc).
+    if cc_fb = True:
+        cc_co2_atmos = cc_fb(inter_emissions, time, runs=runs, tstep=tstep)
+        results += cc_co2_atmos * co2_re
+        
+    return results
+    
+def cc_fb(emission, years, runs=1, tstep=0.01):
+    """
+    Calculate climate-carbon feedback component of radiative forcing.
+    
+    Inputs:
+        emission: numpy array with emission at each timestep
+        years: numpy array of equal length with time at each step
+        
+    Outputs:
+        forcing: numpy array of size equal to radiative_forcing
+    """
+    results = np.zeros_like(emission)
+    
+    if runs > 1:
+        ccfb_dist = sp.stats.triang.rvs(1, scale=2, size=runs, random_state=RS)
+        for run in np.arange(runs):
+            cc_co2 = CH4_cc_tempforrf(emission, years) * gamma * ccfb_dist[run]
+            cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
+                                              time.size) * tstep
+            
+            results[:,run] = cc_co2_atmos 
+        
+    else:
+        ccfb_dist = 1
+        cc_co2 = CH4_cc_tempforrf(emission, years) * gamma * ccfb_dist
+        cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
+                                          time.size) * tstep
+        
+        results = cc_co2_atmos
+    
+    return results
+        
 
 def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='AR5',
         cc_fb = True, decay=True, CH4tau = 12.4, RE=1.277E-13 * 1.65, runs=1, RS=1,
         full_output=False):
-    """Transforms an array of CO2 emissions into radiative forcing, CRF, or temperature
-    with user defined time-step. Still need to set up cc_fb for monte carlo. For MC,
-    all variable inputs should come in with the same number of values as "runs", and 
-    already be randomly distributed.
+    """Transforms an array of CH4 emissions into radiative forcing, CRF, or temperature
+    with user defined time-step. 
     
     Parameters:
         emission: an array of emissions, should be same size as years
@@ -375,6 +546,12 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
         ch4_re = 1.277E-13 * 1.65
     
     if decay == True: # CH4 to CO2 decay
+    
+        rf = CH4_decay(inter_emissions, time, tstep=tstep, 
+                        runs=runs, RS=RS, cc_fb=cc_fb)
+    
+    
+    
         if runs > 1: # More than one run, so use MC
         
             #Adjusted CH4 lifetime
