@@ -307,9 +307,6 @@ def CH4_decay(emission, years, tstep = 0.01, runs=1, RS=1, CH4tau=12.4,
     """
     #Results array
     results = np.zeros((len(years), runs))
-    print 'the initialized results array has shape ' + str(results.shape)
-    print 'The emission array has shape ' + str(emission.shape) 
-    print 'The years array has shape ' + str(years.shape) 
     
     
     #For Monte Carlo
@@ -478,6 +475,117 @@ def CH4_decay(emission, years, tstep = 0.01, runs=1, RS=1, CH4tau=12.4,
         
     return results
     
+def CH4_no_decay(emission, years, tstep = 0.01, runs=1, RS=1, CH4tau=12.4, 
+                ccfb=True, kind='RF'):
+    """
+    Transforms an array of CH4 emissions into radiative forcing, CRF, or temperature
+    with user defined time-step. Does not include decay of CH4 to CO2.
+    
+    
+    """
+    #Results array
+    results = np.zeros((len(years), runs))
+    
+    
+    #For Monte Carlo
+    if runs > 1:
+        #Adjusted CH4 lifetime
+        tau = norm.rvs(12.4, 1.4, size=runs, random_state=RS)
+       
+        # 90% CI is +/- 60% of mean. Divide by 1.64 to find sigma
+        f1 = norm.rvs(0.5, 0.5 * 0.6 / 1.64, size=runs, random_state=RS+1) 
+        
+        # 90% CI is +/- 71.43% of mean. Divide by 1.64 to find sigma
+        f2 = norm.rvs(0.15, 0.15 * 0.7143 / 1.64, size=runs, random_state=RS+2) 
+        
+        # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
+        RE = norm.rvs(1.277E-13, 1.277E-13 * 0.1 / 1.64, size=runs, random_state=RS+3)
+        
+        #Total CH4 radiative efficiency
+        CH4RE_total = RE * (1 + f1 + f2)
+
+        
+        
+        for count in np.arange(runs):
+            
+            #Random choice of emission scenario where more than one is available
+            emiss = emission#[random.choice(emission.columns)]
+        
+            # Use sequential values of tau and RE, so they are the same between runs
+            ch4_tau = tau[count]
+            ch4_re = CH4RE_total[count]
+            
+            # Calculation of CH4 and CO2 in atmosphere over time.
+            ch4_atmos = np.resize(fftconvolve(CH4_AR5(years, ch4_tau), emission),
+                              years.size) * tstep
+        
+            # Forcing from CH4
+            rf = ch4_atmos * ch4_re
+            #print rf.shape
+            
+
+            if kind == 'RF':
+                results[:,count] = rf
+            elif kind == 'temp':
+				temp = np.resize(fftconvolve(AR5_GTP(time), rf), years.size) * tstep
+				results[:,count] = temp
+            elif kind == 'CRF':
+                crf = cumtrapz(rf, dx = tstep, initial = 0)
+                results[:,count] = crf
+                
+        
+            
+    elif runs == 1:
+        
+        #Defined radiative efficiency (per kg) for CH4 from AR5
+        ch4_re = 1.277E-13 * 1.65
+        
+        #Amount of CH4 in the atmosphere over time    
+        ch4_atmos = np.resize(fftconvolve(CH4_AR5(time), emission),
+                              years.size) * tstep
+        
+        #Forcing from CH4
+        rf = ch4_atmos * ch4_re 
+        
+        if kind == 'RF':
+            results = rf
+        elif kind == 'temp':
+            temp = np.resize(fftconvolve(AR5_GTP(time), rf), years.size) * tstep
+            results = temp
+        elif kind == 'CRF':
+            crf = cumtrapz(rf, dx = tstep, initial = 0)
+            results = crf
+        
+    #Having trouble figuring out if I should include cc_fb in this function or in the
+    #CH4 function. Trying it here. The ccfb_dist variable in cc_fb should account for
+    #all uncertainty (CO2 IRF, etc).
+    if ccfb == True:
+        co2_re = 1.756e-15
+        cc_co2_atmos = cc_fb(emission, years, runs=runs, tstep=tstep, RS=RS)
+        
+        #Forcing from climate-carbon feedbacks
+        cc_rf = cc_co2_atmos * co2_re
+        
+        if kind == 'RF':
+            results += cc_rf
+            #print 'In the CH4_decay function, the results shape is ' + str(results.shape)
+        
+        elif kind == 'temp':
+            if runs == 1:
+                temp = np.resize(fftconvolve(AR5_GTP(time), rf), years.size) * tstep
+                results += temp
+               
+            else: 
+                for run in runs:
+                    results[:,run] += np.resize(fftconvolve(AR5_GTP(time), results[:,run]), 
+                                                        years.size) * tstepp
+            
+        elif kind == 'CRF':
+            crf = cumtrapz(rf, dx = tstep, axis = 1, initial = 0)
+            results += crf
+        
+    return results
+    
 def cc_fb(emission, years, runs=1, tstep=0.01, RS=1):
     """
     Calculate climate-carbon feedback component of radiative forcing.
@@ -523,7 +631,10 @@ def cc_fb(emission, years, runs=1, tstep=0.01, RS=1):
 def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='AR5',
         cc_fb = True, decay=True, CH4tau = 12.4, RE=1.277E-13 * 1.65, runs=1, RS=1,
         full_output=False):
-    """Transforms an array of CH4 emissions into radiative forcing, CRF, or temperature
+    """
+    Still need to pull out CH4 without decay calculations
+    
+    Transforms an array of CH4 emissions into radiative forcing, CRF, or temperature
     with user defined time-step. 
     
     Parameters:
@@ -653,79 +764,40 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     
                 return output, full_output
         
+    elif decay == False: # CH4 to CO2 decay
         
+        #rename parameter - results out of CH4_decay are RF, CRF, or temp
+        rf = CH4_no_decay(inter_emissions, time, tstep=tstep, 
+                        runs=runs, RS=RS, ccfb=cc_fb)
+        
+        #Need to add calculation of CRF and temp back in
+        results = rf
     
-	#No CH4 decay to CO2 (biogenic CH4 source)          
-    else:
-        if runs > 1: #Multiple runs, so use MC
+        if runs == 1:
+            return results
             
-            tau = norm.rvs(12.4, 1.4, size=runs, random_state=RS)
-           
-            # 90% CI is +/- 60% of mean. Divide by 1.64 to find sigma
-            f1 = norm.rvs(0.5, 0.5 * 0.6 / 1.64, size=runs, random_state=RS+1) 
-            
-            # 90% CI is +/- 71.43% of mean. Divide by 1.64 to find sigma
-            f2 = norm.rvs(0.15, 0.15 * 0.7143 / 1.64, size=runs, random_state=RS+2) 
-            
-            # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
-            RE = norm.rvs(1.277E-13, 1.277E-13 * 0.1 / 1.64, size=runs, random_state=RS+3)
-            RE_total = RE * (1 + f1 + f2)
-            
-            # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
-            CO2RE = norm.rvs(1.756e-15, 1.756e-15 * 0.1 / 1.64, size=runs, 
-                            random_state=RS+4)
-            
-            
-            for count in np.arange(runs):
-            
-                #Random choice of emission scenario where more than one is available
-                emiss = emission#[random.choice(emission.columns)]
-            
-				
-                # Use sequential values of tau and RE, so they are the same between runs
-                ch4_tau = tau[count]
-                ch4_re = RE_total[count]
-                co2_re = CO2RE[count]
-				
-				# CH4 in atmosphere, and calculation of forcing
-                ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), inter_emissions),
-                                  time.size) * tstep
-            
-                rf = ch4_atmos * ch4_re
-            
-                # Additional CO2 emissions from cc-fb
-                if cc_fb == True: #I need to set up cc_fb for MC still
-				    #Accounting for uncertainty through normal distribution
-                    cc_co2 = CH4_cc_tempforrf(inter_emissions, time) * gamma * ccfb_dist[count]
-                    cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
-                                      time.size) * tstep
-                    rf += cc_co2_atmos * co2_re
+        else:
+    
                 
-                #Store single run of results, or calculate temp
-                if kind == 'temp':
-                    temp = np.resize(fftconvolve(AR5_GTP(time), rf), time.size) * tstep
-                    results[:,count] = temp
-                    #continue
-                else:
-					results[:,count] = rf
-
             
-			#Calculate output, which is mean and +- 1 sigma
+            #Calculate output, which is mean and +/- 1 sigma
             if full_output == False:
                 output = pd.DataFrame(columns = ['mean', '-sigma', '+sigma'])    
                 if kind == 'CRF':
-                    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
+                    #CRF calculation should be happening in the CH4_decay function
+                    #crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
                     output['mean'] = np.mean(crf[0::slice_step], axis=1)
                     output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
                     output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
                 
                 elif kind == 'RF' or 'temp':
+                    #output['mean'] = np.mean(results[0::slice_step], axis=1)
                     output['mean'] = np.mean(results[0::slice_step], axis=1)
                     output['-sigma'] = output['mean'] - np.std(results[0::slice_step],
                                                                 axis=1)
                     output['+sigma'] = output['mean'] + np.std(results[0::slice_step], 
                                                                 axis=1)
-
+    
                 return output
     
             elif full_output == True:
@@ -735,7 +807,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                     output['mean'] = np.mean(crf[0::slice_step], axis=1)
                     output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
                     output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-            
+                    
                     full_output = crf[0::slice_step]
                 
                 elif kind == 'RF' or 'temp':
@@ -746,43 +818,8 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                                                                 axis=1)
             
                     full_output = results[0::slice_step]
-
-                #elif kind == 'CRF':
-                #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-                #    output['mean'] = np.mean(crf[0::slice_step], axis=1)
-                #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-                #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-            
-                #    full_output = crf[0::slice_step]
-            
-                return output, full_output
-                
-        # No CH4 decay, no MC
-        else:
-            ch4_re = RE
-            
-            ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, CH4tau), inter_emissions),
-                                  time.size) * tstep
-            
-            rf = ch4_atmos * ch4_re
-            
-            if cc_fb == True: #I need to set up cc_fb for MC still
-                cc_co2 = CH4_cc_tempforrf(inter_emissions, time) * gamma
-                cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
-                                  time.size) * tstep
-                rf += cc_co2_atmos * co2_re
-            
-            # Set output
-            if kind == 'RF':
-                output = rf[0::slice_step]
-            elif kind == 'temp':
-				temp = np.resize(fftconvolve(AR5_GTP(time), rf), time.size) * tstep
-				output = temp[0::slice_step]
-            elif kind == 'CRF':
-                crf = cumtrapz(rf, dx = tstep, initial = 0)
-                output = crf[0::slice_step]
     
-            return output
+                return output, full_output
 
 
 def CH4_cc_tempforrf(emission, years, tstep=0.01, kind='linear', source='AR5',
