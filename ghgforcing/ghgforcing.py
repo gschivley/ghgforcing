@@ -297,7 +297,7 @@ def ch42co2(t, CH4tau=12.4, alpha=0.51):
     #ch4tau = 12.4
     return 1/CH4tau * alpha * np.exp(-t/CH4tau)
 
-def CH4_decay(emission, years, tstep = 0.01, runs=1, RS=1, cc_fb=True):
+def CH4_rf_decay(emission, years, tstep = 0.01, runs=1, RS=1, CH4tau=12.4, ccfb=True):
     """
     Transforms an array of CH4 emissions into radiative forcing, CRF, or temperature
     with user defined time-step. Accounts for decay of CH4 to CO2.
@@ -385,9 +385,9 @@ def CH4_decay(emission, years, tstep = 0.01, runs=1, RS=1, cc_fb=True):
             alpha = alpha_dist[count]
             
             # Calculation of CH4 and CO2 in atmosphere over time.
-            ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), inter_emissions),
+            ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), emission),
                               time.size) * tstep
-            co2 = np.resize(fftconvolve(ch42co2(time, ch4_tau, alpha), inter_emissions),
+            co2 = np.resize(fftconvolve(ch42co2(time, ch4_tau, alpha), emission),
                         time.size) * tstep
             
             #I've now included uncertainty here, but the code is pretty sloppy. Need
@@ -411,11 +411,11 @@ def CH4_decay(emission, years, tstep = 0.01, runs=1, RS=1, cc_fb=True):
         co2_re = 1.756e-15
         
         #Amount of CH4 in the atmosphere over time    
-        ch4_atmos = np.resize(fftconvolve(CH4_AR5(time), inter_emissions),
+        ch4_atmos = np.resize(fftconvolve(CH4_AR5(time), emission),
                               time.size) * tstep
         
         #CO2 emissions from CH4 decay
-        co2 = np.resize(fftconvolve(ch42co2(time, CH4tau), inter_emissions),
+        co2 = np.resize(fftconvolve(ch42co2(time, CH4tau), emission),
                         time.size) * tstep
         
         #Amount of CO2 in the atmosphere over time
@@ -430,8 +430,8 @@ def CH4_decay(emission, years, tstep = 0.01, runs=1, RS=1, cc_fb=True):
     #Having trouble figuring out if I should include cc_fb in this function or in the
     #CH4 function. Trying it here. The ccfb_dist variable in cc_fb should account for
     #all uncertainty (CO2 IRF, etc).
-    if cc_fb = True:
-        cc_co2_atmos = cc_fb(inter_emissions, time, runs=runs, tstep=tstep)
+    if ccfb == True:
+        cc_co2_atmos = cc_fb(emission, time, runs=runs, tstep=tstep)
         results += cc_co2_atmos * co2_re
         
     return results
@@ -449,8 +449,15 @@ def cc_fb(emission, years, runs=1, tstep=0.01):
     """
     results = np.zeros_like(emission)
     
+    # Gamma is the kg carbon released per K temperature increase - Collins et al (2013)
+    gamma = (44.0/12.0) * 10**12
+    
     if runs > 1:
+        
+        #This triangular distribution should (in theory) account for all uncertainties
+        #in climate-carbon feedback effects. Based on description of +/-100% in AR5.
         ccfb_dist = sp.stats.triang.rvs(1, scale=2, size=runs, random_state=RS)
+        
         for run in np.arange(runs):
             cc_co2 = CH4_cc_tempforrf(emission, years) * gamma * ccfb_dist[run]
             cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
@@ -547,8 +554,8 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     
     if decay == True: # CH4 to CO2 decay
     
-        rf = CH4_decay(inter_emissions, time, tstep=tstep, 
-                        runs=runs, RS=RS, cc_fb=cc_fb)
+        rf = CH4_rf_decay(inter_emissions, time, tstep=tstep, 
+                        runs=runs, RS=RS, ccfb=cc_fb)
     
     
     
@@ -871,6 +878,9 @@ def CH4_cc_tempforrf(emission, years, tstep=0.01, kind='linear', source='AR5',
     'Alt', 'Alt_low', and 'Alt_high' are also options.
     decay: a boolean variable for if methane decay to CO2 should be included
     """
+    co2_re = 1.756E-15
+    ch4_re = 1.277E-13 * 1.65
+    
     if min(years) > 0:
         years = years - min(years)
     
