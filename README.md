@@ -1,5 +1,6 @@
 # ghgforcing
-**Note: Check out the example Jupyter notebook for how to use `CO2` and `CH4` functions**
+
+**Note: Check out the examples of how to use the functions in ghgforcing**
 
 Python package to calculating forcing from continuous GHG emissions. All calculations are
 based on equations and parameters in the 2013 IPCC AR5 report. As such, the model does not

@@ -8,23 +8,6 @@ import pandas as pd
 import random
 
 
-# Radiative efficiencies of each gas, calculated from AR5 & AR5 SM
-co2_re, ch4_re, n2o_re, sf6_re = 1.756E-15, 1.277E-13 * 1.65, 3.845E-13, 2.010E-11
-
-# AR5 2013 IRF values
-a0, a1, a2, a3 = 0.2173, 0.224, 0.2824, 0.2763
-tau1, tau2, tau3 = 394.4, 36.54, 4.304
-
-def f0(t):
-    return a0
-def f1(t):
-    return a1*np.exp(-t/tau1)
-def f2(t):
-    return a2*np.exp(-t/tau2)
-def f3(t):
-    return a3*np.exp(-t/tau3)
-    
-
 def CO2_AR5(t, **kwargs):
     """ Returns the IRF for CO2 using parameter values from IPCC AR5/Joos et al (2013)
     
@@ -49,16 +32,6 @@ def CH4_AR5(t, CH4tau = 12.4):
     CH4tau: adjusted lifetime for methane. uncertainty is +/- 18.57% for 90% CI
     """
     return np.exp(-t/CH4tau)
-    
-#N2O response fuction
-N2Otau = 121
-def N2O_AR5(t):
-    return np.exp(-t/CH4tau)
-
-#SF6 response fuction   
-SF6tau = 3200
-def SF6_AR5(t):
-    return np.exp(-t/CH4tau)
 
 #Temperature response function to radiative forcing
 
@@ -70,6 +43,9 @@ def AR5_GTP(t):
     """
     return c1/d1*np.exp(-t/d1) + c2/d2*np.exp(-t/d2)
 
+
+#Alt temp functions are different from what is used in IPCC. They are not really used
+#at the moment. Goal is to use the Alt function with Monte Carlo in a future version.
 def Alt_GTP(t):
     c1, c2, d1, d2 = 0.43, 0.32, 2.57, 82.24
     """ The response function for radiative forcing. Taken from Olivie and Peters (2013),
@@ -118,8 +94,6 @@ def CO2_mass(emission, time, tstep=0.01, **kwargs):
     tau2 = kwargs.get('tau2', 36.54)
     tau3 = kwargs.get('tau3', 4.304)
     
-    
-    
     atmos = np.resize(fftconvolve(CO2_AR5(time, **co2_kwargs), 
                   emission), time.size) * tstep
                   
@@ -135,40 +109,53 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     with user defined time-step.
     
     Parameters:
-    emission: an array of emissions, should be same size as years
-    years: an array of years at which the emissions take place
-    tstep: time step to be used in the calculations
-    kind: RF, CRF, or temp
-    interpolation: the type of interpolation to use; can be linear or cubic
-    source: the source of parameters for the temperature IRF. default is AR5,
-    'Alt', 'Alt_low', and 'Alt_high' are also options.
-    runs: Number of runs for monte carlo. A single run will return a numpy array, multiple
-    runs will return a pandas dataframe with columns "mean", "+sigma", and "-sigma".
-    RS: Random state initiator for continuity between calls
-    full_output: When True, outputs the results from all runs as an array in addition to
-    the mean and +/- sigma as a DataFrame
+        emission: an array of emissions, should be same size as years
+        
+        years: an array of years at which the emissions take place
+        
+        tstep: time step to be used in the calculations
+        
+        kind: RF, CRF, or temp
+        
+        interpolation: the type of interpolation to use; can be linear or cubic
+        
+        source: the source of parameters for the temperature IRF. default is AR5,
+        'Alt', 'Alt_low', and 'Alt_high' are also options.
+        
+        runs: Number of runs for monte carlo. A single run will return a numpy array, multiple
+        runs will return a pandas dataframe with columns "mean", "+sigma", and "-sigma".
+        
+        RS: Random state initiator for continuity between calls
+        
+        full_output: When True, outputs the results from all runs as an array in addition to
+        the mean and +/- sigma as a DataFrame
     
     Keyword arguments are used to pass random IRF parameter values for a single run as
     part of a larger monte carlo calculation (currently limited to CH4 decomposing to
     CO2 in the *CH4* function).
     
     Returns:
-    output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and full_output is
-            False, returns a dataframe with 'mean', '+sigma', and '-sigma' columns.
-    output, full_output: Only returned when full_output=True. Both the dataframe with
-            'mean', '+sigma', and '-sigma' columns, and results from all MC runs.
+        output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and full_output is
+                False, returns a dataframe with 'mean', '+sigma', and '-sigma' columns.
+        output, full_output: Only returned when full_output=True. Both the dataframe with
+                'mean', '+sigma', and '-sigma' columns, and a numpy array with results
+                from all MC runs.
     """
+    
+    #Adjust years so that they start at zero
     if min(years) > 0:
         years = years - min(years)
     
+    #Years and emissions to equal-spaced intervals (tstep)
     end = max(years) 
     f = interp1d(years, emission, kind=interpolation)
     time = np.linspace(years[0], end, end/tstep + 1)    
     inter_emissions = f(time)
+    
     results = np.zeros((len(time), runs))
-    count = 0
     slice_step = int(1/tstep)
     
+    #Monte Carlo calculations when runs > 1
     if runs > 1:
         
         # sigma and x are from Olivie and Peters (2013) Table 5 (J13 values)
@@ -181,29 +168,32 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                         [-0.009, 0.003,	-0.013,	0.006,	0.013,	0.046]])
     
         x = np.array([5.479, 2.913,	0.496, 0.181, 0.401, -0.472])
-    
+        
+        #Generic name (data) for the IRF monte carlo results
         data = multivariate_normal.rvs(x,sigma, runs, random_state=RS)
     
+        #Using a dataframe to make coding easier below
         data_df = pd.DataFrame(data, columns=['t1', 't2', 't3', 'b1','b2','b3'])
     
         df_exp = np.exp(data_df)
     
+        #All parameter values for the CO2 IRF (tau and a)
         a0 = 1 / (1 + df_exp['b1'] + df_exp['b2'] + df_exp['b3'])
         a1 = df_exp['b1'] / (1 + df_exp['b1'] + df_exp['b2'] + df_exp['b3'])
         a2 = df_exp['b2'] / (1 + df_exp['b1'] + df_exp['b2'] + df_exp['b3'])
         a3 = df_exp['b3'] / (1 + df_exp['b1'] + df_exp['b2'] + df_exp['b3'])
-    
-        #a = pd.concat([A0, A1, A2, A3], axis=1)
+        
+        tau1=df_exp['t1'].values
+        tau2=df_exp['t2'].values
+        tau3=df_exp['t3'].values
         
         # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
         RE = norm.rvs(1.756e-15, 1.756e-15 * .1 / 1.64, size=runs, random_state=RS+1)
     
-        tau1=df_exp['t1'].values
-        tau2=df_exp['t2'].values
-        tau3=df_exp['t3'].values
     
-    
-        for count in np.arange(runs): #Is there a way to do this in parallel?
+        #Is there a way to do this in parallel?
+        #*Should* it be done in parallel here?
+        for count in np.arange(runs): 
             co2_kwargs = {'a1' : a1[count], 
                         'a2' : a2[count], 
                         'a3' : a3[count],
@@ -217,15 +207,20 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             rf = atmos * CO2_re
             
             
+            #Calculation of temperature from forcing
             if kind == 'temp':
                 temp = np.resize(fftconvolve(AR5_GTP(time), rf), time.size) * tstep
+                
+                #Store individual run in results matrix
                 results[:,count] = temp
                 #continue
-            else:
-                results[:,count] = rf
             
-            count += 1
+            else:
+                #Store individual run in results matrix
+                results[:,count] = rf
+
         
+        #Return only the mean & +/- 1 sigma values for each year
         if full_output == False:
             output = pd.DataFrame(columns = ['mean', '-sigma', '+sigma'])    
             if kind == 'CRF':
@@ -238,15 +233,10 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 output['mean'] = np.mean(results[0::slice_step], axis=1)
                 output['-sigma'] = output['mean'] - np.std(results[0::slice_step], axis=1)
                 output['+sigma'] = output['mean'] + np.std(results[0::slice_step], axis=1)
-
-            #elif kind == 'CRF':
-            #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-            #    output['mean'] = np.mean(crf[0::slice_step], axis=1)
-            #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-            #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
                     
             return output
         
+        #Return both the limited and full outputs
         else:
             output = pd.DataFrame(columns = ['mean', '-sigma', '+sigma'])    
             if kind == 'CRF':
@@ -264,17 +254,11 @@ def CO2(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 
                 full_output = results[0::slice_step]
 
-            #elif kind == 'CRF':
-            #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-            #    output['mean'] = np.mean(crf[0::slice_step], axis=1)
-            #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-            #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-                
-            #    full_output = crf[0::slice_step]
                 
             return output, full_output
             
                  
+    #Deterministic calculations when runs not > 1
     else:
         CO2_re=1.756E-15            
         atmos = np.resize(fftconvolve(CO2_AR5(time, **kwargs), 
@@ -320,36 +304,51 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     all variable inputs should come in with the same number of values as "runs", and 
     already be randomly distributed.
     
-    
-    emission: an array of emissions, should be same size as years
-    years: an array of years at which the emissions take place
-    tstep: time step to be used in the calculations
-    kind: RF, CRF, or temp
-    interpolation: the type of interpolation to use; can be linear or cubic
-    source: the source of parameters for the temperature IRF. default is AR5,
-    'Alt', 'Alt_low', and 'Alt_high' are also options.
-    cc_fb: True if climate-carbon cycle feedbacks are included.
-    decay: True if methane is fossil-based, will include decay to CO2.
-    CH4tau: adjusted lifetime for methane. uncertainty is +/- 18.57% for 90% CI. Use tuple
-    for multiple values.
-    RE: Radiative efficiency of methane, including the 15% and 50% adders for indirect
-    effects on water vapor and ozone.
-    runs: number of runs for monte carlo
-    RS: Random state initiator for continuity between calls
-    full_output: When True, outputs the results from all runs as an array in addition to
-    the mean and +/- sigma as a DataFrame
+    Parameters:
+        emission: an array of emissions, should be same size as years
+        
+        years: an array of years at which the emissions take place
+        
+        tstep: time step to be used in the calculations
+        
+        kind: RF, CRF, or temp
+        
+        interpolation: the type of interpolation to use; can be linear or cubic
+        
+        source: the source of parameters for the temperature IRF. default is AR5,
+        'Alt', 'Alt_low', and 'Alt_high' are also options.
+        
+        cc_fb: True if climate-carbon cycle feedbacks are included.
+        
+        decay: True if methane is fossil-based, will include decay to CO2.
+        
+        CH4tau: adjusted lifetime for methane. uncertainty is +/- 18.57% for 90% CI. Use tuple
+        for multiple values.
+        
+        RE: Radiative efficiency of methane, including the 15% and 50% adders for indirect
+        effects on water vapor and ozone.
+        
+        runs: number of runs for monte carlo
+        
+        RS: Random state initiator for continuity between calls
+        
+        full_output: When True, outputs the results from all runs as an array in addition to
+        the mean and +/- sigma as a DataFrame
     
     Returns:
-    output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and full_output is
-            False, returns a dataframe with 'mean', '+sigma', and '-sigma' columns.
-    output, full_output: Only returned when full_output=True. Both the dataframe with
-            'mean', '+sigma', and '-sigma' columns, and results from all MC runs.
+        output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and full_output is
+                False, returns a dataframe with 'mean', '+sigma', and '-sigma' columns.
+                
+        output, full_output: Only returned when full_output=True. Both the dataframe with
+                'mean', '+sigma', and '-sigma' columns, and results from all MC runs.
     """
+    #This function has pieces that need to be split out to clean up the code.
     
-	# Gamma is the carbon released per K temperature increase - Collins et al (2013)
+    
+	# Gamma is the kg carbon released per K temperature increase - Collins et al (2013)
     gamma = (44.0/12.0) * 10**12
 
-	# This is a holdover from some models with emissions in non-consecutive years
+	#Years and emissions to equal-spaced intervals (tstep)
     if min(years) > 0:
         years = years - min(years)
     
@@ -357,17 +356,11 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     f = interp1d(years, emission, kind=interpolation)
     time = np.linspace(years[0], end, end/tstep + 1)    
     inter_emissions = f(time)
-    results = np.zeros((len(time), runs))
-    count = 0
-    slice_step = int(1/tstep)
-
     
-    #if not isinstance(emission, pd.DataFrame):
-    #    emission = pd.DataFrame(emission)
     
     results = np.zeros((len(time), runs))
-
     slice_step = int(1/tstep)
+
             
     #Attempting to account for uncertainty in cc-fb, which is +/- 100% through a triang
     #distribution. This is based on the footnote of AR5 Table 8.7 that the uncertainties
@@ -376,16 +369,15 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
     
  
     
-      
+     
     if runs == 1:
         co2_re = 1.756E-15
         ch4_re = 1.277E-13 * 1.65
     
-                
-    count = 0
     if decay == True: # CH4 to CO2 decay
         if runs > 1: # More than one run, so use MC
         
+            #Adjusted CH4 lifetime
             tau = norm.rvs(12.4, 1.4, size=runs, random_state=RS)
            
             # 90% CI is +/- 60% of mean. Divide by 1.64 to find sigma
@@ -433,7 +425,8 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             tau2=df_exp['t2'].values
             tau3=df_exp['t3'].values
             
-            while count < runs:
+            
+            for count in np.arange(runs):
                 
                 #Random choice of emission scenario where more than one is available
                 emiss = emission#[random.choice(emission.columns)]
@@ -486,8 +479,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 else:
 					results[:,count] = rf
                 
-
-                count += 1
             
             #Calculate output, which is mean and +/- 1 sigma
             if full_output == False:
@@ -505,12 +496,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                     output['+sigma'] = output['mean'] + np.std(results[0::slice_step], 
                                                                 axis=1)
 
-                #elif kind == 'CRF':
-                #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-                #   output['mean'] = np.mean(crf[0::slice_step], axis=1)
-                #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-                #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-                
                 return output
     
             elif full_output == True:
@@ -532,14 +517,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             
                     full_output = results[0::slice_step]
 
-                #elif kind == 'CRF':
-                #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-                #    output['mean'] = np.mean(crf[0::slice_step], axis=1)
-                #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-                #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-            
-                #    full_output = crf[0::slice_step]
-            
                 return output, full_output
         
         # Single run, no MC
@@ -594,7 +571,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                             random_state=RS+4)
             
             
-            while count < runs:
+            for count in np.arange(runs):
             
                 #Random choice of emission scenario where more than one is available
                 emiss = emission#[random.choice(emission.columns)]
@@ -626,9 +603,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                     #continue
                 else:
 					results[:,count] = rf
-                
 
-                count += 1
             
 			#Calculate output, which is mean and +- 1 sigma
             if full_output == False:
@@ -646,12 +621,6 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                     output['+sigma'] = output['mean'] + np.std(results[0::slice_step], 
                                                                 axis=1)
 
-                #elif kind == 'CRF':
-                #    crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
-                #    output['mean'] = np.mean(crf[0::slice_step], axis=1)
-                #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
-                #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-                
                 return output
     
             elif full_output == True:
