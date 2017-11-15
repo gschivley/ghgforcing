@@ -686,7 +686,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
 
 
 def CH4_cc_tempforrf(emission, years, tstep=0.01, kind='linear', source='AR5',
-             decay=True, ch4_re=1.277E-13 * 1.65):
+             decay=True, ch4_re=1.277E-13 * 1.65, co2_re=1.756E-15):
     """Transforms an array of methane emissions into temperature with user-defined
     time-step. Default temperature IRF is from AR5, use 'Alt_low' or 'Alt_high'
     for a sensitivity test.
