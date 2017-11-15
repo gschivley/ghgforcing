@@ -8,8 +8,4 @@ setup(name='ghgforcing',
       author_email='greg.schivley@gmail.com',
       license='MIT',
       packages=['ghgforcing'],
-      install_requires=[
-          'numpy',
-          'scipy',
-          'pandas'],
       zip_safe=False)
