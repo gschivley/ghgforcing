@@ -301,106 +301,106 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
         full_output=False):
     """Transforms an array of CO2 emissions into radiative forcing, CRF, or temperature
     with user defined time-step. Still need to set up cc_fb for monte carlo. For MC,
-    all variable inputs should come in with the same number of values as "runs", and 
+    all variable inputs should come in with the same number of values as "runs", and
     already be randomly distributed.
-    
+
     Parameters:
         emission: an array of emissions, should be same size as years
-        
+
         years: an array of years at which the emissions take place
-        
+
         tstep: time step to be used in the calculations
-        
+
         kind: RF, CRF, or temp
-        
+
         interpolation: the type of interpolation to use; can be linear or cubic
-        
+
         source: the source of parameters for the temperature IRF. default is AR5,
         'Alt', 'Alt_low', and 'Alt_high' are also options.
-        
+
         cc_fb: True if climate-carbon cycle feedbacks are included.
-        
+
         decay: True if methane is fossil-based, will include decay to CO2.
-        
+
         CH4tau: adjusted lifetime for methane. uncertainty is +/- 18.57% for 90% CI. Use tuple
         for multiple values.
-        
+
         RE: Radiative efficiency of methane, including the 15% and 50% adders for indirect
         effects on water vapor and ozone.
-        
+
         runs: number of runs for monte carlo
-        
+
         RS: Random state initiator for continuity between calls
-        
+
         full_output: When True, outputs the results from all runs as an array in addition to
         the mean and +/- sigma as a DataFrame
-    
+
     Returns:
         output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and full_output is
                 False, returns a dataframe with 'mean', '+sigma', and '-sigma' columns.
-                
+
         output, full_output: Only returned when full_output=True. Both the dataframe with
                 'mean', '+sigma', and '-sigma' columns, and results from all MC runs.
     """
     #This function has pieces that need to be split out to clean up the code.
-    
-    
+
+
 	# Gamma is the kg carbon released per K temperature increase - Collins et al (2013)
     gamma = (44.0/12.0) * 10**12
 
 	#Years and emissions to equal-spaced intervals (tstep)
     if min(years) > 0:
         years = years - min(years)
-    
-    end = max(years) 
+
+    end = max(years)
     f = interp1d(years, emission, kind=interpolation)
-    time = np.linspace(years[0], end, end/tstep + 1)    
+    time = np.linspace(years[0], end, end/tstep + 1)
     inter_emissions = f(time)
-    
-    
+
+
     results = np.zeros((len(time), runs))
     slice_step = int(1/tstep)
 
-            
+
     #Attempting to account for uncertainty in cc-fb, which is +/- 100% through a triang
     #distribution. This is based on the footnote of AR5 Table 8.7 that the uncertainties
     #in magnitude of cc-fb are comparable in size to the effect.
     ccfb_dist = sp.stats.triang.rvs(1, scale=2, size=runs, random_state=RS)
-    
- 
-    
-     
+
+
+
+
     if runs == 1:
         co2_re = 1.756E-15
-        ch4_re = 1.277E-13 * 1.65
-    
+        ch4_re = RE #1.277E-13 * 1.65
+
     if decay == True: # CH4 to CO2 decay
         if runs > 1: # More than one run, so use MC
-        
+
             #Adjusted CH4 lifetime
             tau = norm.rvs(12.4, 1.4, size=runs, random_state=RS)
-           
+
             # 90% CI is +/- 60% of mean. Divide by 1.64 to find sigma
-            f1 = norm.rvs(0.5, 0.5 * 0.6 / 1.64, size=runs, random_state=RS+1) 
-            
+            f1 = norm.rvs(0.5, 0.5 * 0.6 / 1.64, size=runs, random_state=RS+1)
+
             # 90% CI is +/- 71.43% of mean. Divide by 1.64 to find sigma
-            f2 = norm.rvs(0.15, 0.15 * 0.7143 / 1.64, size=runs, random_state=RS+2) 
-            
+            f2 = norm.rvs(0.15, 0.15 * 0.7143 / 1.64, size=runs, random_state=RS+2)
+
             # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
             RE = norm.rvs(1.277E-13, 1.277E-13 * 0.1 / 1.64, size=runs, random_state=RS+3)
             RE_total = RE * (1 + f1 + f2)
-            
+
             # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
-            CO2RE = norm.rvs(1.756e-15, 1.756e-15 * 0.1 / 1.64, size=runs, 
+            CO2RE = norm.rvs(1.756e-15, 1.756e-15 * 0.1 / 1.64, size=runs,
                             random_state=RS+4)
-                            
-            #Uncertainty in CH4 decomposition to CO2. Boucher et al (2009) use a lower 
-            #bound of 51% and an upper bound of 100%. GWP calculations in AR5 assume 51% 
-            #(personal communication - find email to cite). Using a uniform distribution 
+
+            #Uncertainty in CH4 decomposition to CO2. Boucher et al (2009) use a lower
+            #bound of 51% and an upper bound of 100%. GWP calculations in AR5 assume 51%
+            #(personal communication - find email to cite). Using a uniform distribution
             #here for now.
-            alpha_dist = sp.stats.uniform.rvs(loc=0.51, scale=0.49, 
+            alpha_dist = sp.stats.uniform.rvs(loc=0.51, scale=0.49,
                                               size=runs, random_state=RS)
-            
+
             # sigma and x are from Olivie and Peters (2013) Table 5 (J13 values)
             # They are the covariance and mean arrays for CO2 IRF uncertainty
             sigma = np.array([[0.129, -0.058, 0.017, -0.042, -0.004, -0.009],
@@ -547,47 +547,47 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             elif kind == 'CRF':
                 crf = cumtrapz(rf, dx = tstep, initial = 0)
                 output = crf[0::slice_step]
-            
+
             return output
-    
-	#No CH4 decay to CO2 (biogenic CH4 source)          
+
+	#No CH4 decay to CO2 (biogenic CH4 source)
     else:
         if runs > 1: #Multiple runs, so use MC
-            
+
             tau = norm.rvs(12.4, 1.4, size=runs, random_state=RS)
-           
+
             # 90% CI is +/- 60% of mean. Divide by 1.64 to find sigma
-            f1 = norm.rvs(0.5, 0.5 * 0.6 / 1.64, size=runs, random_state=RS+1) 
-            
+            f1 = norm.rvs(0.5, 0.5 * 0.6 / 1.64, size=runs, random_state=RS+1)
+
             # 90% CI is +/- 71.43% of mean. Divide by 1.64 to find sigma
-            f2 = norm.rvs(0.15, 0.15 * 0.7143 / 1.64, size=runs, random_state=RS+2) 
-            
+            f2 = norm.rvs(0.15, 0.15 * 0.7143 / 1.64, size=runs, random_state=RS+2)
+
             # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
-            RE = norm.rvs(1.277E-13, 1.277E-13 * 0.1 / 1.64, size=runs, random_state=RS+3)
+            ch4_RE = norm.rvs(RE, RE * 0.1 / 1.64, size=runs, random_state=RS+3)
             RE_total = RE * (1 + f1 + f2)
-            
+
             # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
-            CO2RE = norm.rvs(1.756e-15, 1.756e-15 * 0.1 / 1.64, size=runs, 
+            CO2RE = norm.rvs(1.756e-15, 1.756e-15 * 0.1 / 1.64, size=runs,
                             random_state=RS+4)
-            
-            
+
+
             for count in np.arange(runs):
-            
+
                 #Random choice of emission scenario where more than one is available
                 emiss = emission#[random.choice(emission.columns)]
-            
-				
+
+
                 # Use sequential values of tau and RE, so they are the same between runs
                 ch4_tau = tau[count]
                 ch4_re = RE_total[count]
                 co2_re = CO2RE[count]
-				
+
 				# CH4 in atmosphere, and calculation of forcing
                 ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), inter_emissions),
                                   time.size) * tstep
-            
+
                 rf = ch4_atmos * ch4_re
-            
+
                 # Additional CO2 emissions from cc-fb
                 if cc_fb == True: #I need to set up cc_fb for MC still
 				    #Accounting for uncertainty through normal distribution
