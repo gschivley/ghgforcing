@@ -387,8 +387,8 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             f2 = norm.rvs(0.15, 0.15 * 0.7143 / 1.64, size=runs, random_state=RS+2)
 
             # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
-            RE = norm.rvs(1.277E-13, 1.277E-13 * 0.1 / 1.64, size=runs, random_state=RS+3)
-            RE_total = RE * (1 + f1 + f2)
+            ch4_RE = norm.rvs(RE, RE * 0.1 / 1.64, size=runs, random_state=RS+3)
+            RE_total = ch4_RE * (1 + f1 + f2)
 
             # 90% CI is +/- 10% of mean. Divide by 1.64 to find sigma
             CO2RE = norm.rvs(1.756e-15, 1.756e-15 * 0.1 / 1.64, size=runs,
@@ -424,49 +424,50 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             tau1=df_exp['t1'].values
             tau2=df_exp['t2'].values
             tau3=df_exp['t3'].values
-            
-            
+
+
             for count in np.arange(runs):
-                
+
                 #Random choice of emission scenario where more than one is available
                 emiss = emission#[random.choice(emission.columns)]
-            
+
 				# Use sequential values of tau and RE, so they are the same between runs
                 ch4_tau = tau[count]
                 ch4_re = RE_total[count]
                 co2_re = CO2RE[count]
-                
+
                 #CO2 IRF parameter values
-                co2_kwargs = {'a0' : a0[count], 
-                              'a1' : a1[count], 
-                              'a2' : a2[count], 
+                co2_kwargs = {'a0' : a0[count],
+                              'a1' : a1[count],
+                              'a2' : a2[count],
                               'a3' : a3[count],
                               'tau1' : tau1[count],
                               'tau2' : tau2[count],
                               'tau3' : tau3[count]}
-                
+
                 #Percent of CH4 that decays to CO2
                 alpha = alpha_dist[count]
-                
+
 				# Calculation of CH4 and CO2 in atmosphere over time.
                 ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, ch4_tau), inter_emissions),
                                   time.size) * tstep
                 co2 = np.resize(fftconvolve(ch42co2(time, ch4_tau, alpha), inter_emissions),
                             time.size) * tstep
-                
+
                 #I've now included uncertainty here, but the code is pretty sloppy. Need
                 #to clean it up soon, maybe use the *CO2* function to include uncertainty
-                #rather than copying the multivariate normal stuff in here.                              
+                #rather than copying the multivariate normal stuff in here.
                 co2_atmos = np.resize(fftconvolve(CO2_AR5(time, **co2_kwargs), co2),
                                   time.size) * tstep
-            
+
                 # Forcing from CH4 and CO2
                 rf = ch4_atmos * ch4_re + co2_atmos * co2_re
-            
+
                 # Additional forcing from cc-fb
                 if cc_fb == True: #I need to set up cc_fb for MC still
 				    #Accounting for uncertainty through normal distribution
-                    cc_co2 = CH4_cc_tempforrf(emiss, years) * gamma * ccfb_dist[count]
+                    cc_co2 = (CH4_cc_tempforrf(emiss, years, ch4_re=ch4_re)
+                              * gamma * ccfb_dist[count])
                     cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
                                       time.size) * tstep
                     rf += cc_co2_atmos * co2_re
@@ -478,67 +479,68 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                     #continue
                 else:
 					results[:,count] = rf
-                
-            
+
+
             #Calculate output, which is mean and +/- 1 sigma
             if full_output == False:
-                output = pd.DataFrame(columns = ['mean', '-sigma', '+sigma'])    
+                output = pd.DataFrame(columns = ['mean', '-sigma', '+sigma'])
                 if kind == 'CRF':
                     crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
                     output['mean'] = np.mean(crf[0::slice_step], axis=1)
                     output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
                     output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-                
+
                 elif kind == 'RF' or 'temp':
                     output['mean'] = np.mean(results[0::slice_step], axis=1)
                     output['-sigma'] = output['mean'] - np.std(results[0::slice_step],
                                                                 axis=1)
-                    output['+sigma'] = output['mean'] + np.std(results[0::slice_step], 
+                    output['+sigma'] = output['mean'] + np.std(results[0::slice_step],
                                                                 axis=1)
 
                 return output
-    
+
             elif full_output == True:
-                output = pd.DataFrame(columns = ['mean', '-sigma', '+sigma'])    
+                output = pd.DataFrame(columns = ['mean', '-sigma', '+sigma'])
                 if kind == 'CRF':
                     crf = cumtrapz(results, dx = tstep, initial = 0, axis=0)
                     output['mean'] = np.mean(crf[0::slice_step], axis=1)
                     output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
                     output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-                    
+
                     full_output = crf[0::slice_step]
-                
+
                 elif kind == 'RF' or 'temp':
                     output['mean'] = np.mean(results[0::slice_step], axis=1)
-                    output['-sigma'] = output['mean'] - np.std(results[0::slice_step], 
+                    output['-sigma'] = output['mean'] - np.std(results[0::slice_step],
                                                                 axis=1)
-                    output['+sigma'] = output['mean'] + np.std(results[0::slice_step], 
+                    output['+sigma'] = output['mean'] + np.std(results[0::slice_step],
                                                                 axis=1)
-            
+
                     full_output = results[0::slice_step]
 
                 return output, full_output
-        
+
         # Single run, no MC
         else:
             ch4_re = RE
-            
+
             ch4_atmos = np.resize(fftconvolve(CH4_AR5(time), inter_emissions),
                                   time.size) * tstep
             co2 = np.resize(fftconvolve(ch42co2(time, CH4tau), inter_emissions),
                             time.size) * tstep
             co2_atmos = np.resize(fftconvolve(CO2_AR5(time), co2),
                                   time.size) * tstep
-            
+
             rf = ch4_atmos * ch4_re + co2_atmos * co2_re
-            
+
             if cc_fb == True: #I need to set up cc_fb for MC still
-                cc_co2 = CH4_cc_tempforrf(emission, years) * gamma
+                cc_co2 = (CH4_cc_tempforrf(emission, years, ch4_re=ch4_re)
+                          * gamma)
                 cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
                                   time.size) * tstep
                 rf += cc_co2_atmos * co2_re
-            
-            
+
+
             if kind == 'RF':
                 output = rf[0::slice_step]
             elif kind == 'temp':
@@ -591,11 +593,13 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 # Additional CO2 emissions from cc-fb
                 if cc_fb == True: #I need to set up cc_fb for MC still
 				    #Accounting for uncertainty through normal distribution
-                    cc_co2 = CH4_cc_tempforrf(inter_emissions, time) * gamma * ccfb_dist[count]
+                    cc_co2 = (CH4_cc_tempforrf(inter_emissions, time,
+                                               ch4_re=ch4_re)
+                              * gamma * ccfb_dist[count])
                     cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
                                       time.size) * tstep
                     rf += cc_co2_atmos * co2_re
-                
+
                 #Store single run of results, or calculate temp
                 if kind == 'temp':
                     temp = np.resize(fftconvolve(AR5_GTP(time), rf), time.size) * tstep
@@ -647,26 +651,27 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
                 #    output['mean'] = np.mean(crf[0::slice_step], axis=1)
                 #    output['-sigma'] = output['mean'] - np.std(crf[0::slice_step], axis=1)
                 #    output['+sigma'] = output['mean'] + np.std(crf[0::slice_step], axis=1)
-            
+
                 #    full_output = crf[0::slice_step]
-            
+
                 return output, full_output
-                
+
         # No CH4 decay, no MC
         else:
             ch4_re = RE
-            
+
             ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, CH4tau), inter_emissions),
                                   time.size) * tstep
-            
+
             rf = ch4_atmos * ch4_re
-            
+
             if cc_fb == True: #I need to set up cc_fb for MC still
-                cc_co2 = CH4_cc_tempforrf(inter_emissions, time) * gamma
+                cc_co2 = CH4_cc_tempforrf(inter_emissions, time,
+                                          ch4_re=ch4_re) * gamma
                 cc_co2_atmos = np.resize(fftconvolve(CO2_AR5(time), cc_co2),
                                   time.size) * tstep
                 rf += cc_co2_atmos * co2_re
-            
+
             # Set output
             if kind == 'RF':
                 output = rf[0::slice_step]
@@ -676,16 +681,16 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
             elif kind == 'CRF':
                 crf = cumtrapz(rf, dx = tstep, initial = 0)
                 output = crf[0::slice_step]
-    
+
             return output
 
 
 def CH4_cc_tempforrf(emission, years, tstep=0.01, kind='linear', source='AR5',
-             decay=True): 
+             decay=True, ch4_re=1.277E-13 * 1.65):
     """Transforms an array of methane emissions into temperature with user-defined
     time-step. Default temperature IRF is from AR5, use 'Alt_low' or 'Alt_high'
     for a sensitivity test.
-    
+
     emission: an array of emissions, should be same size as years
     years: an array of years at which the emissions take place
     tstep: time step to be used in the calculations
