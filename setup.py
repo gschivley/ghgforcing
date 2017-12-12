@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='ghgforcing',
-      version='0.1.5',
+      version='0.1.5.1',
       description='Calculate radiative forcing from GHG emissions',
       url='https://github.com/gschivley/ghgforcing',
       author='Greg Schivley',
