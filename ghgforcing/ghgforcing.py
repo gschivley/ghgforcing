@@ -296,8 +296,9 @@ def ch42co2(t, CH4tau=12.4, alpha=0.51):
     return 1/CH4tau * alpha * np.exp(-t/CH4tau)
 
 
-def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='AR5',
-        cc_fb = True, decay=True, CH4tau = 12.4, RE=1.277E-13 * 1.65, runs=1, RS=1,
+def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear',
+        source='AR5', cc_fb = True, decay=True, CH4tau = 12.4,
+        CH4_RE=1.277E-13 * 1.65, CO2_RE = 1.756E-15, runs=1, RS=1,
         full_output=False):
     """Transforms an array of CO2 emissions into radiative forcing, CRF, or temperature
     with user defined time-step. Still need to set up cc_fb for monte carlo. For MC,
@@ -315,32 +316,36 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
 
         interpolation: the type of interpolation to use; can be linear or cubic
 
-        source: the source of parameters for the temperature IRF. default is AR5,
-        'Alt', 'Alt_low', and 'Alt_high' are also options.
+        source: the source of parameters for the temperature IRF. default is
+            AR5, 'Alt', 'Alt_low', and 'Alt_high' are also options.
 
         cc_fb: True if climate-carbon cycle feedbacks are included.
 
         decay: True if methane is fossil-based, will include decay to CO2.
 
-        CH4tau: adjusted lifetime for methane. uncertainty is +/- 18.57% for 90% CI. Use tuple
-        for multiple values.
+        CH4tau: adjusted lifetime for methane. uncertainty is +/- 18.57% for
+            90% CI. Use tuple for multiple values.
 
-        RE: Radiative efficiency of methane, including the 15% and 50% adders for indirect
-        effects on water vapor and ozone.
+        CH4_RE: Radiative efficiency of methane, including the 15% and 50%
+            adders for indirect effects on water vapor and ozone.
+
+        CO2_RE: Radiative efficiency of carbon dioxide
 
         runs: number of runs for monte carlo
 
         RS: Random state initiator for continuity between calls
 
-        full_output: When True, outputs the results from all runs as an array in addition to
-        the mean and +/- sigma as a DataFrame
+        full_output: When True, outputs the results from all runs as an array
+            in addition to the mean and +/- sigma as a DataFrame
 
     Returns:
-        output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and full_output is
-                False, returns a dataframe with 'mean', '+sigma', and '-sigma' columns.
+        output: When runs=1, deterministic RF, CRF, or temp. When runs > 1 and
+            full_output is False, returns a dataframe with 'mean', '+sigma',
+            and '-sigma' columns.
 
-        output, full_output: Only returned when full_output=True. Both the dataframe with
-                'mean', '+sigma', and '-sigma' columns, and results from all MC runs.
+        output, full_output: Only returned when full_output=True. Both the
+            dataframe with 'mean', '+sigma', and '-sigma' columns, and results
+            from all MC runs.
     """
     #This function has pieces that need to be split out to clean up the code.
 
@@ -371,8 +376,9 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear', source='
 
 
     if runs == 1:
-        co2_re = 1.756E-15
-        ch4_re = 1.277E-13 * 1.65
+        # This whole treatment of RE is bad and should be moved elsewhere
+        co2_re = CO2_RE
+        ch4_re = CH4_RE
 
     if decay == True: # CH4 to CO2 decay
         if runs > 1: # More than one run, so use MC
