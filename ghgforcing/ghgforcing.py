@@ -528,7 +528,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear',
 
         # Single run, no MC
         else:
-            ch4_re = RE
+            ch4_re = CH4_RE
 
             ch4_atmos = np.resize(fftconvolve(CH4_AR5(time), inter_emissions),
                                   time.size) * tstep
@@ -664,7 +664,7 @@ def CH4(emission, years, tstep=0.01, kind='RF', interpolation='linear',
 
         # No CH4 decay, no MC
         else:
-            ch4_re = RE
+            ch4_re = CH4_RE
 
             ch4_atmos = np.resize(fftconvolve(CH4_AR5(time, CH4tau), inter_emissions),
                                   time.size) * tstep
